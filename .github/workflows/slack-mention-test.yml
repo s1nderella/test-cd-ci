@@ -31,10 +31,10 @@ jobs:
           # 2) Look up Slack user ID by email
           LOOKUP=$(curl -sS -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
             "https://slack.com/api/users.lookupByEmail?email=$(python3 - <<PY
-import urllib.parse, os
-print(urllib.parse.quote(os.environ['EMAIL']))
-PY
-)")
+            import urllib.parse, os
+            print(urllib.parse.quote(os.environ['EMAIL']))
+            PY
+            )")
           OK=$(jq -r '.ok' <<< "$LOOKUP")
           if [ "$OK" != "true" ]; then
             echo "users.lookupByEmail failed: $LOOKUP"; exit 1
