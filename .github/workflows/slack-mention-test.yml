@@ -40,15 +40,16 @@ jobs:
           REAL_NAME=$(jq -r '.user.profile.real_name // .user.name' <<< "$LOOKUP")
           echo "Resolved Slack user: ${REAL_NAME} (${USER_ID})"
 
-          # 3) Compose message with a real mention <@USER_ID>
-          TEXT="🔔 Test: Hi <@${USER_ID}> — this is a real mention from *${REPO}*."
+          # 3) Compose message with a real mention <@USER_ID> and link
+          TEXT="🔔 Test: Hi <@${USER_ID}> — this is a real mention from *${REPO}*.\n<${RUN_URL}|View run & check errors>"
+
           BLOCKS=$(jq -n --arg txt "$TEXT" --arg url "$RUN_URL" '[
             { "type":"section", "text":{"type":"mrkdwn","text": $txt }},
             { "type":"actions", "elements":[
                 { "type":"button", "text":{"type":"plain_text","text":"View Run"}, "url": $url }
             ]}
           ]')
-
+          
           # 4) Post to Slack
           RESP=$(curl -sS -X POST "https://slack.com/api/chat.postMessage" \
             -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
