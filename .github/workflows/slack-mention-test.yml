@@ -17,26 +17,23 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Basic checks
           if [ -z "${SLACK_BOT_TOKEN:-}" ] || [ -z "${SLACK_CHANNEL_ID:-}" ] || [ -z "${MAP:-}" ]; then
             echo "Missing SLACK_BOT_TOKEN / SLACK_CHANNEL_ID / SLACK_MENTION_EMAIL_MAP"; exit 1
           fi
 
-          # 1) Map GitHub actor -> email (UPN)
+          # 1) Map GitHub actor -> email
           EMAIL=$(jq -r --arg actor "$ACTOR" '.[ $actor ] // empty' <<< "$MAP")
           if [ -z "$EMAIL" ] || [ "$EMAIL" = "null" ]; then
             echo "No email mapping for GitHub actor '$ACTOR' in SLACK_MENTION_EMAIL_MAP"; exit 1
           fi
           echo "Actor ${ACTOR} -> email ${EMAIL}"
 
-          # 2) Look up Slack user ID by email
-          LOOKUP=$(curl -sS -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
-            "https://slack.com/api/users.lookupByEmail?email=$(python3 - <<PY
-            import urllib.parse, os
-            print(urllib.parse.quote(os.environ['EMAIL']))
-            PY
-            )")
-          OK=$(jq -r '.ok' <<< "$LOOKUP")
-          if [ "$OK" != "true" ]; then
+          # 2) Look up Slack user ID by email (no Python, use curl urlencoding)
+          LOOKUP=$(curl -sS -G "https://slack.com/api/users.lookupByEmail" \
+            -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+            --data-urlencode "email=${EMAIL}")
+          if [ "$(jq -r '.ok' <<< "$LOOKUP")" != "true" ]; then
             echo "users.lookupByEmail failed: $LOOKUP"; exit 1
           fi
           USER_ID=$(jq -r '.user.id' <<< "$LOOKUP")
