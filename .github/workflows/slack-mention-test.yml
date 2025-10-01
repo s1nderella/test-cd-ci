@@ -1,0 +1,65 @@
+name: Slack Mention Test (Bot)
+on:
+  workflow_dispatch:
+
+jobs:
+  mention:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve actor and post to Slack
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ vars.SLACK_CHANNEL_ID }}
+          MAP: ${{ vars.SLACK_MENTION_EMAIL_MAP }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SLACK_BOT_TOKEN:-}" ] || [ -z "${SLACK_CHANNEL_ID:-}" ] || [ -z "${MAP:-}" ]; then
+            echo "Missing SLACK_BOT_TOKEN / SLACK_CHANNEL_ID / SLACK_MENTION_EMAIL_MAP"; exit 1
+          fi
+
+          # 1) Map GitHub actor -> email (UPN)
+          EMAIL=$(jq -r --arg actor "$ACTOR" '.[ $actor ] // empty' <<< "$MAP")
+          if [ -z "$EMAIL" ] || [ "$EMAIL" = "null" ]; then
+            echo "No email mapping for GitHub actor '$ACTOR' in SLACK_MENTION_EMAIL_MAP"; exit 1
+          fi
+          echo "Actor ${ACTOR} -> email ${EMAIL}"
+
+          # 2) Look up Slack user ID by email
+          LOOKUP=$(curl -sS -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+            "https://slack.com/api/users.lookupByEmail?email=$(python3 - <<PY
+            import urllib.parse, os
+            print(urllib.parse.quote(os.environ['EMAIL']))
+            PY
+            )")
+          OK=$(jq -r '.ok' <<< "$LOOKUP")
+          if [ "$OK" != "true" ]; then
+            echo "users.lookupByEmail failed: $LOOKUP"; exit 1
+          fi
+          USER_ID=$(jq -r '.user.id' <<< "$LOOKUP")
+          REAL_NAME=$(jq -r '.user.profile.real_name // .user.name' <<< "$LOOKUP")
+          echo "Resolved Slack user: ${REAL_NAME} (${USER_ID})"
+
+          # 3) Compose message with a real mention <@USER_ID>
+          TEXT="🔔 Test: Hi <@${USER_ID}> — this is a real mention from *${REPO}*."
+          BLOCKS=$(jq -n --arg txt "$TEXT" --arg url "$RUN_URL" '[
+            { "type":"section", "text":{"type":"mrkdwn","text": $txt }},
+            { "type":"actions", "elements":[
+                { "type":"button", "text":{"type":"plain_text","text":"View Run"}, "url": $url }
+            ]}
+          ]')
+
+          # 4) Post to Slack
+          RESP=$(curl -sS -X POST "https://slack.com/api/chat.postMessage" \
+            -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+            -H "Content-Type: application/json; charset=utf-8" \
+            --data "$(jq -n --arg ch "$SLACK_CHANNEL_ID" --argjson b "$BLOCKS" \
+              '{channel:$ch, text:"Test message", blocks:$b}')")
+
+          echo "Slack response: $RESP"
+          if [ "$(jq -r '.ok' <<< "$RESP")" != "true" ]; then
+            echo "chat.postMessage failed"; exit 1
+          fi
