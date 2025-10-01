@@ -1,21 +1,6 @@
 name: Teams Webhook Test
-
 on:
   workflow_dispatch:
-    inputs:
-      title:
-        description: "Card title"
-        default: "✅ Teams webhook test"
-        required: false
-      color:
-        description: "Hex color (no #) for the card"
-        default: "2D7D46"
-        required: false
-      simulate_failure:
-        description: "Send a failure-style card"
-        type: boolean
-        default: false
-        required: false
 
 jobs:
   ping:
@@ -24,41 +9,10 @@ jobs:
       - name: Post test card to Teams
         env:
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          TITLE: ${{ inputs.title }}
-          COLOR: ${{ inputs.simulate_failure && 'D24D57' || inputs.color }}
-          EMOJI: ${{ inputs.simulate_failure && '❌' || '✅' }}
-          SUMMARY: ${{ inputs.simulate_failure && 'Teams failure test' || 'Teams webhook test' }}
         run: |
-          if [ -z "${TEAMS_WEBHOOK_URL}" ]; then
-            echo "No TEAMS_WEBHOOK_URL configured; add it in Settings → Secrets and variables → Actions."
-            exit 1
+          if [ -z "$TEAMS_WEBHOOK_URL" ]; then
+            echo "Missing TEAMS_WEBHOOK_URL secret"; exit 1
           fi
-
-          read -r -d '' CARD << 'EOF'
-          {
-            "@type": "MessageCard",
-            "@context": "https://schema.org/extensions",
-            "themeColor": "${COLOR}",
-            "summary": "${SUMMARY}",
-            "title": "${EMOJI} ${TITLE}",
-            "sections": [
-              {
-                "facts": [
-                  { "name": "Repo", "value": "${{ github.repository }}" },
-                  { "name": "Actor", "value": "${{ github.actor }}" }
-                ]
-              }
-            ],
-            "potentialAction": [
-              {
-                "@type": "OpenUri",
-                "name": "View Run",
-                "targets": [{ "os": "default", "uri": "${RUN_URL}"}]
-              }
-            ]
-          }
-          EOF
-
-          curl -sS -H "Content-Type: application/json" -d "${CARD}" "${TEAMS_WEBHOOK_URL}" \
-            || { echo "Posting to Teams failed"; exit 1; }
+          curl -H "Content-Type: application/json" \
+            -d '{"@type":"MessageCard","@context":"https://schema.org/extensions","themeColor":"2D7D46","summary":"Teams webhook test","title":"✅ Teams webhook test"}' \
+            "$TEAMS_WEBHOOK_URL"
